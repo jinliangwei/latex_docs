@@ -1,2 +1,2 @@
-latex_templates
+latex_docs
 ===============
