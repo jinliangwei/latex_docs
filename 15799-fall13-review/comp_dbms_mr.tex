@@ -1,0 +1,98 @@
+\documentclass[12pt, a4paper]{llncs}
+\usepackage{graphicx}
+\usepackage[T1]{fontenc}
+\usepackage{mathpazo} % Loading the package uses font palatino
+\usepackage{wrapfig}
+\usepackage{style/alex}
+
+\setlength{\topmargin}{0pt} % default: 20 pt
+%\setlength{\marginparwidth}{0pt}
+\setlength{\oddsidemargin}{21pt}  % default: 31 pt
+\setlength{\evensidemargin}{21pt}  % default: 31 pt
+\setlength{\textwidth}{400pt}
+\setlength{\textheight}{612pt}
+
+\begin{document}
+\title{}
+\author{Jinliang Wei, jinlianw}
+\institute{}
+%\maketitle
+
+\textbf{\centering Jinliang Wei, jinlianw}
+
+\bibliographystyle{plain}
+\bibliography{reference}
+
+\cite{Pavlo:2009:CAL:1559845.1559865} comprehensively compares two large-scale 
+data analysis approaches: MapReduce and parallel databases and conducted 
+experimental evaluation which showed that parallel databases require longer 
+initialization time but require much shorter processing time for all but one 
+applications in their benchmark. First of all, MapReduce was criticized for not 
+supporting data schema other than simple key-value pairs. Lacking data schema 
+support requires application developers of MapReduce to implement data schema in
+their application code, which creates more trouble when the data is shared among
+applications. Although data schema management might be possible to be separated
+from application logic to allow sharing, users of MapReduce need to ensure new 
+records added all conforms the schema, while schema check is taken care of by 
+parallel databases. MapReduce does not support indexing either. Users need to 
+implement indexes themselves which can be hard. DBMS supports relational 
+programming model, with which users write their applications in high-level 
+programming languages, like SQL, which hides system implementation details from 
+users and the system optimize the query inside. In contrast, users write 
+MapReduce programs in low-level programming languages and have to understand
+the system details to optimize their application code. For the same reason, 
+MapReduce does gain better flexibility and expressiveness. MapReduce always has 
+a shuffling phase, which redistributes all output from mappers to reducers 
+regardless how much of them is actually needed for the final result. Therefore, 
+MapReduce introduces a large amount of unnecessary data transfer. Also, reducers
+pull files from mapper which can caues conflicting disk accesses from different
+reducers, which causes large number of disk seeks and slows it down. Parallel 
+databases pushes data to where they are needed. MapReduce provides better fault 
+tolerance.
+
+\vspace{10pt}
+
+\noindent
+\textbf{Strengths}
+\begin{itemize}
+\item The paper provides a thorough comparision about the differences between 
+databases and MapReduce in system design which are related to the performance 
+difference in experimental evaluation.
+
+\item The paper reports the authors' experience in using Hadoop and two parallel
+databases. It points out the importance of easy setup and straightforward 
+configuration.
+
+\item The paper attributes the performance advantage of databases to B-tree 
+indices, column-oriented storage, compression, and sophisticated query 
+processing.
+  
+\end{itemize}
+
+\vspace{10pt}
+
+\noindent
+\textbf{Weaknesses}
+
+\begin{itemize}
+
+\item MapReduce can be used to preprocess large amount of raw data to formated 
+  data to be used as input to databases. That was not mentioned in the paper.
+
+\item MapReduce is usually considered to have better scaling performance, 
+especially if most work can be done in mappers.
+
+\item Hadoop has been known as a bad implementation of MapReduce. Google's
+MapReduce is very likely to have done some optimization which was not done in 
+Hadoop.
+
+\end{itemize}
+
+\vspace{10pt}
+
+\noindent
+\textbf{Unanswered questions}
+Would it be possible to introduce the database optimization techniques to 
+MapReduce while retaining the flexibility and fault tolerance of it?
+
+\end{document}

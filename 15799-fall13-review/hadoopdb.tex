@@ -1,0 +1,82 @@
+\documentclass[12pt, a4paper]{llncs}
+\usepackage{graphicx}
+\usepackage[T1]{fontenc}
+\usepackage{mathpazo} % Loading the package uses font palatino
+\usepackage{wrapfig}
+\usepackage{style/alex}
+
+\setlength{\topmargin}{0pt} % default: 20 pt
+%\setlength{\marginparwidth}{0pt}
+\setlength{\oddsidemargin}{21pt}  % default: 31 pt
+\setlength{\evensidemargin}{21pt}  % default: 31 pt
+\setlength{\textwidth}{400pt}
+\setlength{\textheight}{612pt}
+
+\begin{document}
+\title{}
+\author{Jinliang Wei, jinlianw}
+\institute{}
+%\maketitle
+
+\textbf{\centering Jinliang Wei, jinlianw}
+
+\bibliographystyle{plain}
+\bibliography{reference}
+
+\cite{Abouzeid:2009:HAH:1687627.1687731} presents HadoopDB, a hybrid data 
+analysis system which combines MapReduce and traditional database and get the 
+best out of both worlds. On each node, a traditional database (such as 
+PostgreSQL) is used to store data. Thus data schema is supported. Job management
+and scheduling is handled by Hadoop. HadoopDB supports a SQL-like query 
+language. Hive is used as the translation layer. The SQL query is then 
+translated to map and reduce operations, and the tasks are distribtued to each 
+node. The map and reduce operations on each node are then 
+transformed to database queries and pushed into the database. For map, data 
+records are fetched from the database and a GroupBy operator is used to group 
+records by keys for reducers to use. HadoopDB pushes as much operations as 
+possible to the database to take advantage of the database query optimizer. By 
+taking advantage of the database, HadoopDB gains performance boost compared to 
+Hadoop (although still not as good as parallel databases).
+
+\vspace{10pt}
+
+\noindent
+\textbf{Strengths}
+\begin{itemize}
+\item HadoopDB combines the fault tolerance and flexibility of MapReduce and the
+support for data schema and query optimization of databases.
+
+\item HadoopDB SMS is aware of colocation of tables in databases, thus it may 
+  get more work done in the map phase. This gives HadoopDB scalability advantage
+  compared to Hive.
+
+\item 
+  
+\end{itemize}
+
+\vspace{10pt}
+
+\noindent
+\textbf{Weaknesses}
+
+\begin{itemize}
+
+\item Data recoreds has to be read out of the database, written to HDFS for them
+  to be shuffled and then used by reducers. It seems unnecessary to write the 
+  records to HDFS.
+
+\item Based on experiment results, the overhead of Hive-coded Hadoop is 
+  significant compared to hand-coded Hadoop.
+
+\end{itemize}
+
+\vspace{10pt}
+
+\noindent
+\textbf{Unanswered questions} It should be possible to do a more intimate 
+combination of MapReduce and database to make more out of them. For example, it
+would be possible to let MapReduce directly read and write to database than via 
+HDFS, which would save disk I/O overhead.
+
+
+\end{document}
