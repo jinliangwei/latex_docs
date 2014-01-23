@@ -2,7 +2,7 @@
 \usepackage{beamerthemesplit} % new 
 \usepackage{mathrsfs}
 \usepackage[normalem]{ulem}
-
+\usepackage{multicol}
 \usetheme{default}
 %\useoutertheme{infolines}
 %\setbeamertemplate{navigation symbols}{gd} 
@@ -107,6 +107,7 @@ previous operations (X) - state depedency.
 \begin{itemize}
 \item Monotonicity is needed to prove the theory.
 \end{itemize}
+\item SIM-commutativity is interface-based.
 \end{itemize}
 
 \end{frame}
@@ -132,12 +133,196 @@ previous operations (X) - state depedency.
 \end{itemize}
 \end{frame}
 
+\begin{frame}
+\frametitle{Come back to the scalable commutativity rule}
+Assume a \uline{specification} $\mathscr{S}$ with a correct reference 
+implementation M. Consider a \uline{history} $H = X || Y$ where $Y$ 
+\uline{SIM-commutes} in $H$, 
+and where M can generate $H$. Then there exists a correct implementation m of 
+$\mathscr{S}$ whose steps in the \uline{$Y$ region} of $H$ are conflict-free.
+\end{frame}
+
 
 \begin{frame}
-  \frametitle{SIM commutativitiy is interface-based}
+  \frametitle{Implementation terminology}
   \begin{itemize}
-    \item It requires the reordering to be 
+    \item An implementation $m$ is a function: $S \times I \longmapsto S \times R$
+      \begin{itemize}
+      \item S: system states
+      \item I: invocations, including CONTINUE
+      \item R: responses, including CONTINUE
+      \end{itemize}
+    \item An implemenation takes in an \uline{invocation} and outputs a 
+      \uline{response}, and may modify the \uline{system state}.
   \end{itemize}
+\end{frame}
+
+\begin{frame}
+\frametitle{Constructed non-scalable implementation}
+\begin{multicols}{2}
+\begin{figure}
+   \includegraphics[width=0.45\textwidth]{799-s14-docs/nonscalable_imple.png}
+ \end{figure}
+\columnbreak
+\begin{itemize}
+\item Check the head of the history, if the call matches the invocation, replay.
+\item Otherwise, use the reference implementation to emulate the system.
+\end{itemize}
+\end{multicols}
+
+Not scalable because in replay mode, two threads conflict on accessing the history.
+
+\end{frame}
+
+\begin{frame}
+\frametitle{Constructed scalable implementation}
+\begin{multicols}{2}
+\begin{figure}
+   \includegraphics[width=0.45\textwidth]{799-s14-docs/scalable_imple.png}
+ \end{figure}
+\columnbreak
+Each thread accesses only its thread-specific history - conflict-free.
+\end{multicols}
+
+How is SIM-commutativity used here?
+
+\end{frame}
+
+\begin{frame}
+\frametitle{Discussion - is the rule actually useful?}
+\begin{itemize}
+
+\item The rule only says that a scalable implementation exists for a region in a
+ particular history. But this history is not the only thing we use the system for.
+
+\begin{itemize}
+\item The authors: the arguments and system states for which a set of operations
+ commutes often collapse into fairly well-defined classes. In practice, implemenations 
+scale for whole classes of states and arguments.
+\end{itemize}
+
+\item Often a set of operations commutes in more than one class of situations, but no 
+single implementation scales for all classes.
+
+\begin{itemize}  
+\item System designers need to understand the tradeoff.
+\end{itemize}
+
+\item Commutativity is not necessary for conflict-free accesses.
+\item Some conflict-free accesses don't scale on real machines.
+
+\begin{itemize}
+\item Memory bus may get overwhelmed whether or not the accesses have conflicts.
+\end{itemize}
+
+\end{itemize}
+
+\end{frame}
+
+\begin{frame}
+\frametitle{Designing commutative interfaces}
+\begin{itemize}
+\item Decompose compond operations
+\begin{itemize}
+\item \texttt{fork} vs. \texttt{posix\_spawn}
+\item \texttt{stat}
+\end{itemize}
+\item Embrace specification non-determinism
+\begin{itemize}
+\item \texttt{open}, lowest available FD vs. any unused FD
+\end{itemize}
+\item Permit weak ordering
+\begin{itemize}
+\item \texttt{send, recv}
+\end{itemize}
+\item Release resources asynchronously
+\end{itemize}
+\end{frame}
+
+\begin{frame}
+\frametitle{Rest of the paper}
+\begin{itemize}
+\item \textsc{Commuter}
+\item Apply \textsc{Commuter} to improve Linux.
+\end{itemize}
+\end{frame}
+
+\begin{frame}
+\frametitle{\textsc{Commuter}}
+\begin{itemize}
+\item Manually analyze the commutativity of an interface is tricky.
+\item \textsc{Analyzer}
+\begin{itemize}
+\item Takes a symbolic mode of an interface and computes the conditions under which
+the interface's operations commtue.
+\item Considers every set of operations of a certain size (typically pairs). 
+Uses symbolic execution to explore all possible paths.
+\item At the end of a code path, checks if that path yeilds a result that's the 
+same as other permutations of the operation.
+\end{itemize}
+\item \textsc{Testgen}
+\item \textsc{Mtrace}
+\end{itemize}
+\end{frame}
+
+\begin{frame}
+\frametitle{\textsc{Analyzer} example input}
+\begin{figure}
+   \includegraphics[width=0.8\textwidth]{799-s14-docs/commuter_rename.png}
+ \end{figure}
+\footnotetext[1]{Figure borrowed from Clement's SOSP 2013 presentation}
+\end{frame}
+
+\begin{frame}
+\frametitle{\textsc{Commuter}}
+\begin{itemize}
+\item \textsc{Testgen}
+\begin{itemize}
+  \item Produces test cases to check if the implementation is actually 
+    conflict-free when operations commute.
+  \item Path coverage.
+  \item Conflict coverage: the same path may result in different memory accesses.
+  \item Start with the constraints of a path condition from \textsc{Analyzer}, 
+    generates all possible concrete assignments for symbolic expressions 
+    (negating equivalent assignments).
+\end{itemize}
+
+\item \textsc{Mtrace}
+\begin{itemize}
+\item Runs the test cases to check for conflicting memory accesses.
+\item A modified QEMU.
+\item Record memory accesses for each test case.
+\end{itemize}
+
+\end{itemize}
+\end{frame}
+
+\begin{frame}
+\frametitle{Applying scalable commutativity rule to Linux}
+\begin{itemize}
+\item Linux 3.8 vs. sv6
+\item 18 system calls
+\item 13,664 test cases
+\end{itemize}
+\end{frame}
+
+\begin{frame}
+\frametitle{Results for Linux}
+\begin{figure}
+   \includegraphics[width=\textwidth]{799-s14-docs/linux_result.png}
+ \end{figure}
+\end{frame}
+
+\begin{frame}
+\frametitle{Results for sv6}
+\begin{figure}
+   \includegraphics[width=\textwidth]{799-s14-docs/sv6_result.png}
+ \end{figure}
+\end{frame}
+
+\begin{frame}
+\frametitle{Making test cases scale}
+
 \end{frame}
 
 \end{document}
