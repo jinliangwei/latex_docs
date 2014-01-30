@@ -75,7 +75,7 @@ resident row. If the bit is set, it denotes that the mapping from slot number
 to row index points to a resident row in the hash table.
 \item An array of integers mapping slot number to row index. This is needed when
 finding a row to evict.
-
+\item An thread-safe queue to store 
 \end{itemize}
 
 \end{frame}
