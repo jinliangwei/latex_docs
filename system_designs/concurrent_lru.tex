@@ -20,26 +20,58 @@
 
 \begin{frame}
 \frametitle{Process Storage Basics}
-\begin{itemize}
-\item ProcessStorage caches a set of rows. Caching means that 
+ProcessStorage caches a set of rows. The maximum number of row can be stored is
+\emph{capacity}. Caching means that 
 \begin{enumerate}
 \item The storage does not necessarily contains the row that its clients ask for;
 \item Resident rows may get evicted anytime unless it's properly protected by 
 reference counting. 
 \end{enumerate}
 
-\item ProcessStorage provides the following interface (implementation details 
-  later):
+\end{frame}
 
+\begin{frame}
+\frametitle{Process Storage API - \texttt{Find()}}
+Set the accessor to point to the row specified by 
+  the row index. Once an accessor is set, it is guaranteed to remain valid until
+ the accessor is destroyed. ``Remain valid'' means that reading
+from the accessor always returns some value. However, whether or not the value 
+satisfies the consistency requirements depends on the specific consistency model.
 \begin{itemize}
-\item \texttt{Find()}: Intialize the accessor to point to the row specified by 
-  the row index. 
-\item \texttt{Insert()}: Insert a client row (including metadata). Optionally 
-returns the evicted row and provide an accessor to the inserted row.
+\item SSP: Freshness of the value read from accessor is not guaranteed across iterations.
+  Generally, accessors from a previous iteration should not be reused.
+\item VAP: accessors remains valid throughout the execution.
 \end{itemize}
+\end{frame}
+
+\begin{frame}
+\frametitle{Process Storage API - \texttt{Insert()}}
+Insert a client row (including metadata). Optionally it returns the evicted row and
+provides an accessor to the inserted row. \texttt{Insert()} assumes the number of rows
+being referenced never reaches \emph{capacity} of the ProcessStorage.
+The insertion logic is as follows:
+\begin{enumerate}
+\item If the row index does not exist in the ProcessStorage, the row is inserted
+ into an empty slot. If ProcessStorage cannot find an empty slot, it may evict an
+ resident row that have zero reference count.
+\item If the row index already exist
+\end{enumerate}
+
+\end{frame}
+
+\begin{frame}
+\frametitle{Process Storage Assumptions and Guarantees}
+\begin{itemize}
+\item Process Storage is initialized with a \emph{capacity} number. It 
+guarantees that the number of rows cached in ProcessStorage does not exceed 
+\emph{capacity} (with a minor exception as explained later).
+
+\item Rows are accessed via accessors which essentially hold a reference to
+a row. If too many (equal to \emph{capacity}) rows are being accessed 
+(references are held to them), the process storage won't be able to evict
+any row so it cannot insert a new row.
 
 \end{itemize}
-
 \end{frame}
 
 \section{Per-Row Reference Count}
