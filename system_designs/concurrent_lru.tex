@@ -54,13 +54,26 @@ The insertion logic is as follows:
 \item If the row index does not exist in the ProcessStorage, the row is inserted
  into an empty slot. If ProcessStorage cannot find an empty slot, it may evict an
  resident row that have zero reference count.
-\item If the row index already exist
+\item If the row index already exists in the table. It will be replaced by the 
+  inserted row regardless the reference count. The replacement guarantees that 
+  if the resident row is being referenced, it will remain valid until all references
+  are cleared.
 \end{enumerate}
 
 \end{frame}
 
 \begin{frame}
 \frametitle{Process Storage Thread Safety}
+\begin{itemize}
+\item \texttt{Find()} and \texttt{Insert()} may be executed concurrently.
+\item \texttt{Find()} and \texttt{Insert()} on the same row index are mutually exclusive.
+\item Mutual exclusiveness implies that if a \texttt{Find()} returns ``Not Found''
+for a row index, the row does not exist in ProcessStorage before \texttt{Find()} is 
+invoked.
+\item Write (\texttt{Insert()}) appears to be atomic. That means if there is a 
+``happen-before''relation between a write and a read (\texttt{Find()}), the 
+result of the write is guaranteed to be visiable.
+\end{itemize}
 \end{frame}
 
 \begin{frame}
@@ -74,7 +87,6 @@ guarantees that the number of rows cached in ProcessStorage does not exceed
 a row. If too many (equal to \emph{capacity}) rows are being accessed 
 (references are held to them), the process storage won't be able to evict
 any row so it cannot insert a new row.
-
 \end{itemize}
 \end{frame}
 
@@ -87,61 +99,40 @@ Per-Row Reference Count
 \begin{frame}
 \frametitle{Major Data Structures}
 \begin{itemize}
-\item Concurrent Cuckoo hash: support concurrent insert, look-up and delete; 
+\item Concurrent hash table: support concurrent insert, look-up and delete; 
 support dynamic resizing; does not support concurrent traversal. The hash table
 maps row index to client row pointer.
 \item Striped lock: each lock guards a disjoint subset of row indices. A lock 
 guarantees exclusive accesses to the object stored in the hash table for operations
 that may alter the validity of the object and operations that requires the validity 
-to remain unchanged throughout the course of excution.
+to remain unchanged throughout the course of excution. The object that's 
+stored in the hash table is pointer, the striped lock guarantees exclusive 
+access to the memory that's pointed to by the pointer via ProcessStorage. However,
+the client row also accessed outside the ProcessStorage, ProcessStorage assumes
+concurent operations from outside on the client row is properly handled by the client 
+row.
 \item An integer to denote the number of occupied slots in the hash table.
 \end{itemize}
 \end{frame}
 
 \begin{frame}
-\frametitle{Major Data Structures - CLOCK LRU}
-CLOCK LRU logic, which contains the following data structures (bitsets and
- array are sized to capacity):
+\frametitle{Consistency Requirements for Concurrent Hash Table}
 \begin{itemize}
-\item A bitset of eviction bits: each bit denotes if a row can be evicted. If 
-the bit is set, the slot is evictable otherwise it is not. This particular 
-representation is to accomodate the operations of \texttt{std::atomic\_flag}.
-\item A bitset of occupation bits: each bit denotes if the slot is occupied by a
-resident row. If the bit is set, it denotes that the mapping from slot number
-to row index points to a resident row in the hash table.
-\item An array of integers mapping slot number to row index. This is needed when
-finding a row to evict.
-\item An thread-safe queue to store 
-\end{itemize}
-
-\end{frame}
-
-\begin{frame}
-\frametitle{Semantics of the Striped Lock}
-\begin{itemize}
-\item The striped lock is shared between ProcessStorage and its component CLOCK 
-LRU.
-\item Since a lock guards the validity of client row pointers stored in the hash
-  table, the lock should be acquired when
-\begin{enumerate}
-\item The operation might invalidate the row pointer (e.g. erasing the row from 
-  the hash table);
-\item Or the operation requires the validity of the row but cannot guarantee that
-via other means (e.g. reference counting).
-\end{enumerate}
-\item Since the occupation bits denotes the occupation of the slots by the resident
-row, operations on the 
-\item As shown later, this should be the only cases where lock is necessary.
+\item Reads and Writes on distinct keys may happen concurrently.
+\item The order of operations of a single thread is preserved.
+\item If there's a ``happen-before'' relation between a write and a read on the 
+  same key, the result of the write is guaranteed to be seen by the read. The 
+``happend-before'' may be established via operations outside the hash table. So 
+that is different from sequential consisitency of the concurrent hash table.
 \end{itemize}
 \end{frame}
 
 \begin{frame}
-  \frametitle{CLOCK LRU High Level Idea}
+\frametitle{Concurrent Cuckoo Hash Table}
 \begin{itemize}
-\item The ProcessStorage employs CLOCK LRU as a manager for eviction. The eviction makes 
-assumption about ProcessStorage and provides certain guarantees.
-\item The LRU logic keeps track of number $C$ rows, where $C$ is the cache capacity. We
-refer to such space as LRU slots for rows. 
+\item Although not mentioned in its docuemnt, libcuckoo provides sequential 
+consistency with one additional constrain: the ordering respects the ordering
+operations outside the hash table. This satisfiled the requirement.
 \end{itemize}
 \end{frame}
 
@@ -151,15 +142,39 @@ The CLOCK LRU logic shares access to the striped lock and the hash table, and
 provides the following APIs:
 
 \begin{itemize}
-\item \texttt{Evict()}: pick a row and erase it from the hash table. 
-  It guarantees to not evict a row that has non-zero reference count. It might
-  be stuck in an infinite loop or return failure if all resident rows have non-zero
-  reference count. The eviction respects the sematics of the striped lock. Once
-  succeed, the number of occupied LRU slots is decremented by 1.
+\item \texttt{FindOneToEvict()}: return a row index to caller which is suggested
+  to be evicted. The row may be actually evicted or not depending on other logic
+  of ProcessStorage, e.g. reference count. The caller thread of 
+  \texttt{FindOneToEvict()} must invoke \texttt{Evict()} or \texttt{NoEvict()} 
+  before invoking any other operation CLOCK LRU. However, all operations of
+  CLOCK LRU are thread-safe.
+
+\item \texttt{Evict()}: inform the CLOCK LRU that a row has been evicted. The
+number of occupied LRU slots is decremented by 1.
+
+\item \texttt{NoEvict()}: notify the CLOCK LRU that the suggested row is not
+evicted. There's no change to the number of occupied slots.
+
+\end{itemize}
+\end{frame}
+
+\begin{frame}
+  \frametitle{CLOCK LRU High Level Idea}
+\begin{itemize}
+\item CLOCK LRU suggests rows to ProcessStorage for eviction. The eviction makes 
+assumption about ProcessStorage and provides certain guarantees.
+\item The LRU logic keeps track of number $C$ rows, where $C$ is the cache capacity. We
+refer to such space as LRU slots for rows. 
+\end{itemize}
+\end{frame}
+
+\begin{frame}
+\frametitle{CLOCK LRU Interface cont.}
+\begin{itemize}
 \item \texttt{Insert()}: notify the LRU logic that a row is resident in the 
   hash table. A row cannot become a cadidate for eviction until \texttt{Insert()}
   is invoked. Once succeed, the number of occupied LRU slots is incremented by 1.
-  It does not access striped lock.
+
 \item \texttt{Reference()}: notify the LRU logic that a slot is recently accessed.
 A parameter to this function is the slot number. LRU takes this a hint. It does 
 not access striped lock.
@@ -176,23 +191,91 @@ not access striped lock.
 \end{itemize}
 \end{frame}
 
+\begin{frame}
+\frametitle{ProcessStorage Implementation - \texttt{Find()}}
+\begin{enumerate}
+\item \underline{Acquire the striped lock based on row index}.
+\item Find the row in the concurrent hash table.
+\item Atomically increment the reference count of that row.
+\item Set the accessor.
+\item Inform the CLOCK LRU.
+\item \underline{Release the lock}.
+\end{enumerate}
+\end{frame}
 
+\begin{frame}
+\frametitle{ProcessorStorage Implementation - \texttt{Insert()}}
+\begin{enumerate}
+\item Atomically fetch and add 1 to the number of occupied slots.
+\item If the number of occupied slots exceeds \emph{capacity} of the
+ProcessStorage,
+\begin{enumerate}
+\item Loop until break
+\item Get a row from CLOCK LRU to evict.
+\item \underline{Acquire the striped lock for the row to be evicted}.
+\item Find that row (a pointer) from the hash table.
+\item Check that row's reference count, if it is non-zero, inform CLOCK LRU, 
+  \underline{release the lock}, repeat.
+\item If it is zero, clear it from the hash table, destroy the row,  inform CLOCK LRU,
+  \underline{releaset the lock} then break from the loop.
+\item Atomically fetch and subtract 1 from the number of occupied slots.
+\end{enumerate}
+\item \underline{Acquire the striped lock for the row to be inserted}.
+\item Find the row in concurrent hash table.
+\item If the row exists, swap (including meta data and row data).
+\item Otherwise, insert the row into the hash table.
+\item \underline{Releaset the lock}.
+\end{enumerate}
+\end{frame}
+
+\begin{frame}
+\frametitle{Correctness Justification}
+\begin{itemize}
+\item The striped lock guarantees the accesses to \texttt{Insert()} and
+\texttt{Find()} are mutually exclusive. The requirements of the concurrent hash
+table and the ordering provided by striped lock guarantees the accesses are
+sequential.
+\item Lock on \texttt{Insert()} is necessary to ensure the previous insert on the
+concurrent hash table is seen by a later operation on the same key. 
+\end{itemize}
+\end{frame}
+
+\begin{frame}
+\frametitle{Major Data Structures - CLOCK LRU}
+CLOCK LRU logic, which contains the following data structures (bitsets and
+ array are sized to capacity):
+\begin{itemize}
+\item A bitset of eviction bits: each bit denotes if a row can be evicted. If 
+the bit is set, the slot is evictable otherwise it is not. This particular 
+representation is to accomodate the operations of \texttt{std::atomic\_flag}.
+\item A bitset of occupation bits: each bit denotes if the slot is occupied by a
+resident row. If the bit is set, it denotes that the mapping from slot number
+to row index points to a resident row in the hash table.
+\item An array of integers mapping slot number to row index. This is needed when
+finding a row to evict.
+\item An thread-safe queue to store empty slots.
+\begin{itemize}
+\item ``Thread-safe'' indicates that operations on that queue is exclusive.
+\end{itemize}
+\end{itemize}
+
+\end{frame}
 \begin{frame}
 \frametitle{Regarding Occupation Bits}
 \begin{itemize}
-\item The occupation bits are concerned about two operations: insert and evict.
+\item The occupation bits are concerned about two operations: \texttt{Insert}, 
+  \texttt{FindOneToEvict} and \texttt{Evict}.
 \item Eviction cannot happen to an empty slot and insertion cannot happen to an 
 occupied slot.
 \end{itemize}
 \end{frame}
 
 \begin{frame}
-\frametitle{CLOCK LRU Implementation - \texttt{Evict()}}
+\frametitle{CLOCK LRU Implementation - \texttt{FindOneToEvict()}}
 
 \begin{enumerate}
 \item Atomically fetch the value of the 
 \end{enumerate}
-Details on LRU and ProcessStorage implementation will follow.
 \end{frame}
 
 \section{Grouped Reference Count}
