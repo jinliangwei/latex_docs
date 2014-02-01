@@ -245,12 +245,14 @@ concurrent hash table is seen by a later operation on the same key.
 CLOCK LRU logic, which contains the following data structures (bitsets and
  array are sized to capacity):
 \begin{itemize}
-\item A bitset of eviction bits: each bit denotes if a row can be evicted. If 
-the bit is set, the slot is evictable otherwise it is not. This particular 
-representation is to accomodate the operations of \texttt{std::atomic\_flag}.
-\item A bitset of occupation bits: each bit denotes if the slot is occupied by a
-resident row. If the bit is set, it denotes that the mapping from slot number
-to row index points to a resident row in the hash table.
+\item An array of eviction flags: each flag denotes if a row can be evicted. If 
+the flag is set, the slot is evictable otherwise it is not. This particular 
+representation is to accomodate the operations of \texttt{std::atomic\_flag}. The
+eviction flags must be initialized to 1.
+\item An array of occupation flags: each flag denotes if the slot is occupied by a
+resident row. If the flag is set, it denotes that the mapping from slot number
+to row index points to a resident row in the hash table. The occupation flags
+are initialized to 0.
 \item An array of integers mapping slot number to row index. This is needed when
 finding a row to evict.
 \item An thread-safe queue to store empty slots.
@@ -274,9 +276,26 @@ occupied slot.
 \frametitle{CLOCK LRU Implementation - \texttt{FindOneToEvict()}}
 
 \begin{enumerate}
-\item Atomically fetch the value of the 
+\item Loop until break.
+\begin{enumerate}
+\item Atomically fetch and add 1 to evict hand. Do modular to make sure it is 
+  within the range.
+\item Atomically check and set the eviction flag. If the eviction flag is already 
+set, the slot is eligible for eviction. Otherwise, continue looping.
+\item If the slot is eligible for eviction, \underline{acquire the striped lock 
+for that slot}.
+\begin{enumerate}
+\item Check the occupation bit, if empty, \underline{release the lock} and continue.
+\item If the occupation is set, find the mapping to row index and return it.
+\end{enumerate}
+\end{enumerate}
 \end{enumerate}
 \end{frame}
+
+\begin{frame}
+\frametitle{}
+\end{frame}
+
 
 \section{Grouped Reference Count}
 
